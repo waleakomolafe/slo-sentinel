@@ -1,0 +1,69 @@
+# promtool unit tests for the generated rules. CI regenerates generated/
+# from examples/checkout_api.yaml before running this file, so these tests
+# assert what the tool actually ships, not a hand-maintained copy.
+#
+# Test 2 is the whole point of multiwindow: a five-minute burst that cooks
+# the 5m window while the 1h window stays inside budget must NOT page.
+
+rule_files:
+  - ../generated/checkout_api_slo.yaml
+
+evaluation_interval: 1m
+
+tests:
+  # 1. Sustained 2% error against a 99.9% target: burn rate 20, both the 1h
+  #    and 5m windows over 14.4. The fast page fires.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="checkout",code="500"}'
+        values: '0+20x130'
+      - series: 'http_requests_total{job="checkout"}'
+        values: '0+1000x130'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: CheckoutApiErrorBudgetBurnFast
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service: checkout-api
+              slo: checkout-api
+            exp_annotations:
+              summary: checkout-api burning error budget at 14.4x over 1h and 5m
+              description: 2% of the 28d error budget burned in 1h against a 99.9% target.
+
+  # 2. A six-minute 10% burst after a clean hour: the 5m window burns at
+  #    ~100x, but the 1h window only reaches ~10x. The AND fails. No page.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="checkout",code="500"}'
+        values: '0x54 0+100x6'
+      - series: 'http_requests_total{job="checkout"}'
+        values: '0+1000x130'
+    alert_rule_test:
+      - eval_time: 60m
+        alertname: CheckoutApiErrorBudgetBurnFast
+        exp_alerts: []
+
+  # 3. Sustained 0.7% error: burn rate 7. Too slow for the 14.4x fast tier,
+  #    comfortably over the 6x slow tier once six hours of history exist.
+  #    The slow page fires; the fast one never does.
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{job="checkout",code="500"}'
+        values: '0+7x420'
+      - series: 'http_requests_total{job="checkout"}'
+        values: '0+1000x420'
+    alert_rule_test:
+      - eval_time: 400m
+        alertname: CheckoutApiErrorBudgetBurnFast
+        exp_alerts: []
+      - eval_time: 400m
+        alertname: CheckoutApiErrorBudgetBurnSlow
+        exp_alerts:
+          - exp_labels:
+              severity: page
+              service: checkout-api
+              slo: checkout-api
+            exp_annotations:
+              summary: checkout-api burning error budget at 6x over 6h and 30m
+              description: 5% of the 28d error budget burned in 6h against a 99.9% target.

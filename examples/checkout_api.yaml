@@ -1,0 +1,11 @@
+# One SLO: the checkout API's success rate over a rolling 28 days.
+# The {{window}} placeholder is where each recording rule's rate window goes,
+# so the indicator is written once and measured at 5m, 30m, 1h, 6h and 3d.
+service: checkout-api
+target: 0.999
+window: 28d
+indicator:
+  error_ratio: |
+    sum(rate(http_requests_total{job="checkout",code=~"5.."}[{{window}}]))
+      /
+    sum(rate(http_requests_total{job="checkout"}[{{window}}]))

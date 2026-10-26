@@ -1,0 +1,9 @@
+# An SLO where the error is not a 5xx: a Kafka consumer group is healthy
+# when its lag stays under the threshold. Anything over it counts as the
+# error event, so the ratio expression uses the same {{window}} contract.
+service: orders-consumer
+target: 0.99
+window: 28d
+indicator:
+  error_ratio: |
+    avg_over_time((sum(kafka_consumergroup_lag{group="orders"}) > bool 1000)[{{window}}:])
